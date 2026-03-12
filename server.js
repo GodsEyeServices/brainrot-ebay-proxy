@@ -2,9 +2,8 @@ const express = require('express');
 const fetch = require('node-fetch');
 const app = express();
 
-app.use(express.text({ type: 'text/xml', limit: '10mb' }));
+app.use(express.text({ type: '*/*', limit: '10mb' }));
 
-// Allow all origins (your dashboard)
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', '*');
@@ -13,7 +12,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// Proxy endpoint
 app.post('/ebay', async (req, res) => {
   try {
     const ebayRes = await fetch('https://api.ebay.com/ws/api.dll', {
@@ -31,11 +29,11 @@ app.post('/ebay', async (req, res) => {
     res.set('Content-Type', 'text/xml');
     res.send(text);
   } catch (e) {
-    res.status(500).send(`<error>${e.message}</error>`);
+    res.status(500).send(`<e>${e.message}</e>`);
   }
 });
 
 app.get('/', (req, res) => res.send('brainrot-ebay-proxy online'));
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Proxy running on port ${PORT}`));
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, '0.0.0.0', () => console.log(`Proxy running on port ${PORT}`));
