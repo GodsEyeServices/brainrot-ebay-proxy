@@ -6,9 +6,10 @@ app.use(express.text({ type: '*/*', limit: '10mb' }));
 
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Headers', '*');
   res.header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
-  if (req.method === 'OPTIONS') return res.sendStatus(200);
+  res.header('Access-Control-Allow-Headers', 'Content-Type, X-EBAY-API-COMPATIBILITY-LEVEL, X-EBAY-API-CALL-NAME, X-EBAY-API-SITEID, X-EBAY-API-APP-NAME, X-EBAY-API-DEV-NAME, X-EBAY-API-CERT-NAME');
+  res.header('Access-Control-Max-Age', '86400'); // cache preflight for 24h
+  if (req.method === 'OPTIONS') return res.status(200).end();
   next();
 });
 
@@ -29,7 +30,7 @@ app.post('/ebay', async (req, res) => {
     res.set('Content-Type', 'text/xml');
     res.send(text);
   } catch (e) {
-    res.status(500).send(`<e>${e.message}</e>`);
+    res.status(500).send(`<error>${e.message}</error>`);
   }
 });
 
