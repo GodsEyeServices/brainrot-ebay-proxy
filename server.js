@@ -43,7 +43,7 @@ app.post('/gemini', async (req, res) => {
   try {
     const apiKey = req.headers['x-gemini-key'];
     if (!apiKey) return res.status(400).json({ error: { message: 'Missing x-gemini-key header' } });
-    const model = req.headers['x-gemini-model'] || 'gemini-1.5-flash';
+    const model = req.headers['x-gemini-model'] || 'gemini-2.0-flash';
     const gemRes = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: req.rawBody }
