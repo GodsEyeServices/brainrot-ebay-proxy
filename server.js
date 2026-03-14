@@ -2,8 +2,12 @@ const express = require('express');
 const fetch = require('node-fetch');
 const app = express();
 
-app.use(express.text({ type: '*/*', limit: '20mb' }));
-app.use(express.json({ limit: '20mb' }));
+// Raw body — handle JSON and XML both as text, parse manually
+app.use((req, res, next) => {
+  let data = '';
+  req.on('data', chunk => data += chunk);
+  req.on('end', () => { req.rawBody = data; next(); });
+});
 
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
@@ -14,7 +18,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// eBay Trading API proxy
 app.post('/ebay', async (req, res) => {
   try {
     const ebayRes = await fetch('https://api.ebay.com/ws/api.dll', {
@@ -26,7 +29,7 @@ app.post('/ebay', async (req, res) => {
         'X-EBAY-API-SITEID':              req.headers['x-ebay-api-siteid'] || '0',
         'X-EBAY-API-APP-NAME':            req.headers['x-ebay-api-app-name'] || '',
       },
-      body: req.body
+      body: req.rawBody
     });
     const text = await ebayRes.text();
     res.set('Content-Type', 'text/xml');
@@ -36,16 +39,14 @@ app.post('/ebay', async (req, res) => {
   }
 });
 
-// Gemini proxy — avoids browser CORS restrictions
 app.post('/gemini', async (req, res) => {
   try {
     const apiKey = req.headers['x-gemini-key'];
     if (!apiKey) return res.status(400).json({ error: { message: 'Missing x-gemini-key header' } });
     const model = req.headers['x-gemini-model'] || 'gemini-1.5-flash';
-    const body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
     const gemRes = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: req.rawBody }
     );
     const data = await gemRes.text();
     res.set('Content-Type', 'application/json');
@@ -55,7 +56,6 @@ app.post('/gemini', async (req, res) => {
   }
 });
 
-// Image fetch proxy
 app.get('/img', async (req, res) => {
   try {
     const url = req.query.url;
