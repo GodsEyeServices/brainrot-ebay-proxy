@@ -2,30 +2,21 @@ const express = require('express');
 const fetch = require('node-fetch');
 const app = express();
 
-// CORS — must be FIRST, before everything
+app.use(express.text({ type: '*/*', limit: '20mb' }));
+app.use(express.json({ limit: '20mb' }));
+
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.header('Access-Control-Allow-Headers', '*');
+  res.header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, X-EBAY-API-COMPATIBILITY-LEVEL, X-EBAY-API-CALL-NAME, X-EBAY-API-SITEID, X-EBAY-API-APP-NAME, X-EBAY-API-DEV-NAME, X-EBAY-API-CERT-NAME, X-GEMINI-KEY, X-GEMINI-MODEL');
   res.header('Access-Control-Max-Age', '86400');
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
+  if (req.method === 'OPTIONS') return res.status(200).end();
   next();
-});
-
-app.use(express.text({ type: '*/*', limit: '10mb' }));
-app.use(express.json({ limit: '10mb' }));
-
-// Health check
-app.get('/', (req, res) => {
-  res.json({ status: 'online', service: 'brainrot-ebay-proxy', time: new Date().toISOString() });
 });
 
 // eBay Trading API proxy
 app.post('/ebay', async (req, res) => {
   try {
-    const body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
     const ebayRes = await fetch('https://api.ebay.com/ws/api.dll', {
       method: 'POST',
       headers: {
@@ -35,36 +26,50 @@ app.post('/ebay', async (req, res) => {
         'X-EBAY-API-SITEID':              req.headers['x-ebay-api-siteid'] || '0',
         'X-EBAY-API-APP-NAME':            req.headers['x-ebay-api-app-name'] || '',
       },
-      body: body
+      body: req.body
     });
     const text = await ebayRes.text();
     res.set('Content-Type', 'text/xml');
     res.send(text);
   } catch (e) {
-    console.error('eBay proxy error:', e.message);
-    res.status(500).send(`<?xml version="1.0"?><Error><Message>${e.message}</Message></Error>`);
+    res.status(500).send(`<e>${e.message}</e>`);
   }
 });
 
-// Image proxy — bypasses CORS for Discord CDN etc
-app.get('/img', async (req, res) => {
-  const url = req.query.url;
-  if (!url) return res.status(400).json({ error: 'Missing url param' });
+// Gemini proxy — avoids browser CORS restrictions
+app.post('/gemini', async (req, res) => {
   try {
-    const imgRes = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-    });
-    const contentType = imgRes.headers.get('content-type') || 'image/png';
-    const buffer = await imgRes.buffer();
-    res.set('Content-Type', contentType);
-    res.set('Cache-Control', 'public, max-age=3600');
-    res.send(buffer);
+    const apiKey = req.headers['x-gemini-key'];
+    if (!apiKey) return res.status(400).json({ error: { message: 'Missing x-gemini-key header' } });
+    const model = req.headers['x-gemini-model'] || 'gemini-1.5-flash';
+    const body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+    const gemRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }
+    );
+    const data = await gemRes.text();
+    res.set('Content-Type', 'application/json');
+    res.send(data);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: { message: e.message } });
   }
 });
+
+// Image fetch proxy
+app.get('/img', async (req, res) => {
+  try {
+    const url = req.query.url;
+    if (!url) return res.status(400).send('missing url');
+    const imgRes = await fetch(url);
+    const buf = await imgRes.buffer();
+    res.set('Content-Type', imgRes.headers.get('content-type') || 'image/png');
+    res.send(buf);
+  } catch (e) {
+    res.status(500).send(e.message);
+  }
+});
+
+app.get('/', (req, res) => res.send('brainrot-ebay-proxy online'));
 
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`brainrot-ebay-proxy running on port ${PORT}`);
-});
+app.listen(PORT, '0.0.0.0', () => console.log(`Proxy running on port ${PORT}`));
