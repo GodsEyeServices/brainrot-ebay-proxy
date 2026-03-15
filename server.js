@@ -2,7 +2,6 @@ const express = require('express');
 const fetch = require('node-fetch');
 const app = express();
 
-// Raw body — handle JSON and XML both as text, parse manually
 app.use((req, res, next) => {
   let data = '';
   req.on('data', chunk => data += chunk);
@@ -20,8 +19,11 @@ app.use((req, res, next) => {
 
 app.post('/ebay', async (req, res) => {
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 25000);
     const ebayRes = await fetch('https://api.ebay.com/ws/api.dll', {
       method: 'POST',
+      signal: controller.signal,
       headers: {
         'Content-Type': 'text/xml',
         'X-EBAY-API-COMPATIBILITY-LEVEL': req.headers['x-ebay-api-compatibility-level'] || '967',
@@ -31,11 +33,16 @@ app.post('/ebay', async (req, res) => {
       },
       body: req.rawBody
     });
+    clearTimeout(timeout);
     const text = await ebayRes.text();
     res.set('Content-Type', 'text/xml');
     res.send(text);
   } catch (e) {
-    res.status(500).send(`<e>${e.message}</e>`);
+    console.error('eBay proxy error:', e.message);
+    // Return error details in XML so client can see what went wrong
+    res.status(200).set('Content-Type', 'text/xml').send(
+      `<?xml version="1.0"?><Errors><Error><SeverityCode>Error</SeverityCode><ErrorCode>proxy_error</ErrorCode><ShortMessage>Proxy Error</ShortMessage><LongMessage>${e.message}</LongMessage></Errors>`
+    );
   }
 });
 
@@ -43,7 +50,7 @@ app.post('/gemini', async (req, res) => {
   try {
     const apiKey = req.headers['x-gemini-key'];
     if (!apiKey) return res.status(400).json({ error: { message: 'Missing x-gemini-key header' } });
-    const model = req.headers['x-gemini-model'] || 'gemini-2.0-flash';
+    const model = req.headers['x-gemini-model'] || 'gemini-2.0-flash-lite';
     const gemRes = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: req.rawBody }
